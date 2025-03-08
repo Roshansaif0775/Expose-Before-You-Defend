@@ -3,7 +3,7 @@ import numpy as np
 from torchvision import transforms
 from torchvision.datasets import CIFAR10, CIFAR100, SVHN, MNIST, ImageNet
 from torchvision.datasets.folder import ImageFolder
-from taibackdoor.attacks import *
+
 
 transform_options = {
     "None": {
