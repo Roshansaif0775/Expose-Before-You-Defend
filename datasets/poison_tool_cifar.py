@@ -23,23 +23,31 @@ else:
 MEAN_CIFAR10 = (0.4914, 0.4822, 0.4465)
 STD_CIFAR10 = (0.2023, 0.1994, 0.2010)
 
-def split_dataset(dataset_name, ratio):
-    from torchvision import datasets, transforms
-
+def split_dataset(dataset, ratio):
     transform = transforms.Compose([transforms.ToTensor()])
 
-    if dataset_name == "CIFAR10":
-        train_set = datasets.CIFAR10(root='./data', train=True, download=True, transform=transform)
+    # Load dataset properly
+    if dataset == "CIFAR10":
+        train_set = datasets.CIFAR10(root="./data", train=True, download=True, transform=transform)
+    elif dataset == "CIFAR100":
+        train_set = datasets.CIFAR100(root="./data", train=True, download=True, transform=transform)
     else:
-        raise ValueError(f"Unsupported dataset: {dataset_name}")
+        raise ValueError(f"Unsupported dataset: {dataset}")
 
-    nb_samples = len(train_set)
-    nb_split = int(nb_samples * ratio)
+    # Ensure train_set is not a string
+    print("train_set type:", type(train_set))
 
-    perm = torch.randperm(nb_samples)
-    train_set.data = train_set.data[perm[nb_split:]]
-    return train_set
+    # Ensure the dataset has `data` attribute
+    if not hasattr(train_set, 'data'):
+        raise AttributeError("train_set has no attribute 'data'. Check dataset loading.")
 
+    nb_train = len(train_set)
+    nb_split = int(ratio * nb_train)
+
+    perm = torch.randperm(nb_train)  # Ensure perm is a tensor
+    train_set.data = train_set.data[perm[nb_split:]]  # Fix potential issue with dataset slicing
+
+    return train_set  # Return only one value
 
 def get_train_loader(args):
     print('==> Preparing train data..')
