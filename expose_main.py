@@ -3,107 +3,123 @@ import torch
 from torch.utils.data import DataLoader
 import torch.nn as nn
 import logging
-import argparse
 import os
-
-from datasets.poison_tool_cifar import get_test_loader, get_train_loader, split_dataset
-from exposes import unlearn, sfft, awp, act_prune
-from exposes.utils import load_state_dict
-import models
-from models.model_for_cifar.resnet_cifar import NoisyBatchNorm2d
-
 import sys
 
-if torch.cuda.is_available():
-    torch.backends.cudnn.enabled = True
-    torch.backends.cudnn.benchmark = True
-    device = torch.device('cuda')
-else:
-    device = torch.device('cpu')
+from datasets.poison_tool_cifar import get_test_loader, get_train_loader, split_dataset
+from exposes import unlearn
+from exposes.utils import load_state_dict
+import models
+from models.ResNet import ResNet18, ResNet34, ResNet50, ResNet101, ResNet152
 
-# seed = 98
-# torch.backends.cudnn.deterministic = True
-# torch.backends.cudnn.benchmark = False
-# torch.manual_seed(seed)
-# np.random.seed(seed)
+# Set device (Use GPU if available on Kaggle)
+device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+print(f"Running on {device}")
 
-sys.path.append('/data/gpfs/projects/punim0619/yige/taibackdoor')
-# os.chdir('/data/gpfs/projects/punim0619/yige/taibackdoor')
+# Set random seed for reproducibility
+seed = 98
+torch.backends.cudnn.deterministic = True
+torch.backends.cudnn.benchmark = False
+torch.manual_seed(seed)
+np.random.seed(seed)
 
+if __name__ == '__main__':
+    print("Execution Started...")
 
-if __name__ == '__main__':  
-    print(torch.cuda.device_count())
-    print(torch.cuda.current_device())
-    
+    # Logger setup (Removed FileHandler)
     logger = logging.getLogger(__name__)
     logging.basicConfig(
         format='[%(asctime)s] - %(message)s',
         datefmt='%Y/%m/%d %H:%M:%S',
-        level=logging.DEBUG,
-        handlers=[
-            logging.FileHandler('output.log'),
-            logging.StreamHandler()
-        ])
+        level=logging.DEBUG
+    )
 
-    parser = argparse.ArgumentParser()
-    parser.add_argument('--target_label', type=int, default=0, help='class of target label')
-    parser.add_argument('--trigger_type', type=str, default='gridTrigger', help='type of backdoor trigger')
-    parser.add_argument('--target_type', type=str, default='all2one', help='type of backdoor label')
-    parser.add_argument('--trig_w', type=int, default=3, help='width of trigger pattern')
-    parser.add_argument('--trig_h', type=int, default=3, help='height of trigger pattern')
+    logger.info("Execution started.")
 
-    parser.add_argument('--dataset', type=str, default='CIFAR10', help='type of dataset')
-    parser.add_argument('--ratio', type=int, default=0.01, help='ratio of defense data')
-    parser.add_argument('--batch_size', type=int, default=128)
-    parser.add_argument('--num_classes', type=int, default=10)
-    parser.add_argument('--img_size', type=int, default=32)
+    # Manually defining arguments (since argparse is not needed in Kaggle)
+    class Args:
+        target_label = 0
+        trigger_type = 'gridTrigger'
+        target_type = 'all2one'
+        trig_w = 3
+        trig_h = 3
+        dataset = 'CIFAR10'
+        ratio = 0.01
+        batch_size = 128
+        num_classes = 10
+        img_size = 32
+        backdoor_model_path = '/kaggle/input/backdoor-model/ResNet18-Backdoor.pth'  # Adjust accordingly
+        output_model_path = None
+        output_logs_path = 'exposes/logs/'
+        arch = 'resnet18'
 
-    parser.add_argument('--backdoor_model_path', type=str,
-                        default='weights/ResNet18-ResNet-BadNets-target0-portion0.1-epoch80.tar',
-                        help='path of backdoored model')
-    parser.add_argument('--output_model_path', type=str,
-                        default=None, help='path of unlearned backdoored model')
-    parser.add_argument('--output_logs_path', type=str,
-                        default='exposes/logs/', help='path of logger')
-    parser.add_argument('--arch', type=str, default='resnet18',
-                        choices=['resnet18', 'resnet34', 'resnet50', 'resnet101', 'resnet152', 'MobileNetV2',
-                                 'vgg19_bn'])
+    args = Args()
 
-    args = parser.parse_args()
-
-    _, split_set = split_dataset(dataset_name=args.dataset, ratio=args.ratio, perm=None)
-    defense_data_loader = DataLoader(split_set, batch_size=128, shuffle=True, num_workers=4)
-    clean_test_loader, bad_test_loader = get_test_loader(args)
-
-
-
+    # Data Preparation
     logger.info('----------- Data Initialization --------------')
-    data_loader = {'defense_loader': defense_data_loader,
-                   'clean_test_loader': clean_test_loader,
-                   'bad_test_loader': bad_test_loader
-                   }
+    print("Splitting dataset and preparing data loaders...")
 
+    split_set = split_dataset(args.dataset, args.ratio)
+    logger.info(f"Splitting dataset: {args.dataset} with defense ratio: {args.ratio}")
+    print("Defense dataset split successfully.")
+
+    defense_data_loader = DataLoader(split_set, batch_size=args.batch_size, shuffle=True, num_workers=4)
+    logger.info("Defense data loaded into DataLoader.")
+
+    print("Loading clean and poisoned test sets...")
+    clean_test_loader, bad_test_loader = get_test_loader(args)
+    logger.info("Test sets loaded successfully.")
+
+    data_loader = {
+        'defense_loader': defense_data_loader,
+        'clean_test_loader': clean_test_loader,
+        'bad_test_loader': bad_test_loader
+    }
+
+    # Model Initialization
     logger.info('----------- Model Initialization --------------')
+    print("Initializing the model...")
 
-    state_dict = torch.load(args.backdoor_model_path, map_location=device)
-    net = getattr(models.model_for_cifar.resnet_cifar, args.arch)(num_classes=args.num_classes, norm_layer=None)
-    load_state_dict(net, orig_state_dict=state_dict)
+    net = ResNet18(num_classes=args.num_classes)
+    logger.info("ResNet18 model initialized.")
+
+    print("Adjusting first convolution layer for CIFAR-10...")
+    net.conv1 = nn.Conv2d(3, 64, kernel_size=3, stride=1, padding=1, bias=False)
+    logger.info("First convolution layer modified.")
+
+    # Model loading with error handling
+    try:
+        logger.info(f"Loading model from: {args.backdoor_model_path}")
+        print(f"Loading backdoored model from {args.backdoor_model_path}...")
+        state_dict = torch.load(args.backdoor_model_path, map_location=device)
+        net.load_state_dict(state_dict, strict=False)
+        logger.info("Model loaded successfully!")
+        print("Model loaded successfully.")
+    except FileNotFoundError:
+        logger.error(f"Model file not found at {args.backdoor_model_path}. Please check the path.")
+        print(f"ERROR: Model file not found at {args.backdoor_model_path}. Exiting.")
+        sys.exit(1)
+    except Exception as e:
+        logger.error(f"Error loading the model: {e}")
+        print(f"ERROR: Failed to load the model: {e}")
+        sys.exit(1)
+
     net = net.to(device)
+    logger.info(f"Model moved to {device}.")
 
+    # Exposing the model
     logger.info('----------- Model Exposing Strategy --------------')
+    print("Applying unlearning strategy to remove backdoor...")
 
-    unlearn = unlearn.Unlearning(args, logger, net, data_loader)
-    unlearn.do_expose()
+    try:
+        unlearn_process = unlearn.Unlearning(args, logger, net, data_loader)
+        unlearn_process.do_expose()
+        logger.info("Unlearning process completed successfully.")
+        print("Unlearning process completed successfully.")
+    except Exception as e:
+        logger.error(f"Unlearning process encountered an issue: {e}")
+        print(f"ERROR: Unlearning failed: {e}")
+        sys.exit(1)
 
-    # shuffleFT = sfft.ShuffleFT(args, logger, net, data_loader)
-    # shuffleFT.do_expose()
-
-    # actPruning = act_prune.ActPruning(args, logger, net, data_loader)
-    # actPruning.do_expose()
-
-    # mask_net = getattr(models.model_for_cifar.resnet_cifar, args.arch)(num_classes=args.num_classes, norm_layer=NoisyBatchNorm2d)
-    # load_state_dict(mask_net, orig_state_dict=state_dict)
-    # mask_net = mask_net.to(device)
-    # awp = awp.AWP(args, logger, mask_net, data_loader)
-    # awp.do_expose()
-
+    logger.info("Execution completed.")
+    print("Process finished successfully.")
