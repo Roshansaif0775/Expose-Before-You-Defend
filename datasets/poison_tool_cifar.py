@@ -23,29 +23,23 @@ else:
 MEAN_CIFAR10 = (0.4914, 0.4822, 0.4465)
 STD_CIFAR10 = (0.2023, 0.1994, 0.2010)
 
-def split_dataset(dataset, frac=0.1, perm=None):
-    """
-    :param dataset: The whole dataset which will be split.
-    """
-    if perm is None:
-        perm = np.arange(len(dataset))
-        np.random.shuffle(perm)
-    nb_split = int(frac * len(dataset))
+def split_dataset(dataset_name, ratio):
+    from torchvision import datasets, transforms
 
-    # generate the training set
-    train_set = deepcopy(dataset)
+    transform = transforms.Compose([transforms.ToTensor()])
+
+    if dataset_name == "CIFAR10":
+        train_set = datasets.CIFAR10(root='./data', train=True, download=True, transform=transform)
+    else:
+        raise ValueError(f"Unsupported dataset: {dataset_name}")
+
+    nb_samples = len(train_set)
+    nb_split = int(nb_samples * ratio)
+
+    perm = torch.randperm(nb_samples)
     train_set.data = train_set.data[perm[nb_split:]]
-    train_set.targets = np.array(train_set.targets)[perm[nb_split:]].tolist()
+    return train_set
 
-    # generate the test set
-    split_set = deepcopy(dataset)
-    split_set.data = split_set.data[perm[:nb_split]]
-    split_set.targets = np.array(split_set.targets)[perm[:nb_split]].tolist()
-
-    print('total data size: %d images, split test size: %d images, split ratio: %f' % (
-    len(train_set.targets), len(split_set.targets), frac))
-
-    return train_set, split_set
 
 def get_train_loader(args):
     print('==> Preparing train data..')
