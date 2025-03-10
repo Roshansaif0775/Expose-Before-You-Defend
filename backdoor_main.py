@@ -8,6 +8,7 @@ import pandas as pd
 from collections import OrderedDict
 from torchvision import models
 from datasets.poison_tool_cifar import get_backdoor_loader, get_test_loader
+from torchvision.models import ResNet18_Weights
 
 # Use GPU if available
 device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
