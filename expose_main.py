@@ -87,7 +87,7 @@ if __name__ == '__main__':
     try:
         logger.info(f"Loading model from: {args.backdoor_model_path}")
         print(f"Loading trained model from {args.backdoor_model_path}...")
-        state_dict = torch.load(args.backdoor_model_path, map_location=device)
+        state_dict = torch.load(args.backdoor_model_path, map_location=device, weights_only=True)
         net.load_state_dict(state_dict, strict=False)
         logger.info("Model loaded successfully!")
     except FileNotFoundError:
