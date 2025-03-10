@@ -52,12 +52,12 @@ print("[INFO] - Data loaders initialized.")
 
 # Model Initialization
 print("[STEP] - Initializing Model...")
-def select_model(model_name, pretrained=False):
+def select_model(model_name, weights=None):
     if model_name == 'ResNet18':
-        return models.resnet18(pretrained=pretrained)
+        return models.resnet18(weights=weights)
     raise ValueError(f"ERROR: Model {model_name} is not supported.")
 
-net = select_model(args.model_name, pretrained=False).to(device)
+net = select_model(args.model_name, weights=None)  # For no pre-trained weights
 print(f"[INFO] - Model {args.model_name} initialized.")
 
 # Loss & Optimizer
