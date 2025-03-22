@@ -4,9 +4,7 @@ from . import ToyModel, ISBBA_resnet, dynamic_models, ResNetWithAT
 from torch.nn import CrossEntropyLoss
 
 # Register mlconfig
-mlconfig.register(ToyModel.ToyModel)
-mlconfig.register(ISBBA_resnet.resnet18_200)
-mlconfig.register(ResNetWithAT.ResnetWithAT)
+
 
 # Optimizers
 mlconfig.register(torch.optim.SGD)
