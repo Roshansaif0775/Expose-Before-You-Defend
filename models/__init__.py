@@ -4,22 +4,21 @@ from . import ResNet, ToyModel, ISBBA_resnet, dynamic_models, ResNetWithAT
 from torch.nn import CrossEntropyLoss
 
 # Register mlconfig
-# mlconfig.register(DatasetGenerator)
 # Models
-mlconfig.register(ResNet.ResNet)
-mlconfig.register(ResNet.ResNet18)
-mlconfig.register(ResNet.ResNet34)
-mlconfig.register(ResNet.ResNet50)
-mlconfig.register(ResNet.ResNet101)
-mlconfig.register(ResNet.ResNet152)
+mlconfig.register(ResNet.ResNet18)  # Only register ResNet18 since it's explicitly used
 mlconfig.register(ToyModel.ToyModel)
 mlconfig.register(ISBBA_resnet.resnet18_200)
 mlconfig.register(ResNetWithAT.ResnetWithAT)
-# optimizer
+
+# Optimizers
 mlconfig.register(torch.optim.SGD)
 mlconfig.register(torch.optim.Adam)
+
+# Learning rate schedulers
 mlconfig.register(torch.optim.lr_scheduler.MultiStepLR)
 mlconfig.register(torch.optim.lr_scheduler.CosineAnnealingLR)
 mlconfig.register(torch.optim.lr_scheduler.StepLR)
 mlconfig.register(torch.optim.lr_scheduler.ExponentialLR)
+
+# Loss functions
 mlconfig.register(torch.nn.CrossEntropyLoss)
