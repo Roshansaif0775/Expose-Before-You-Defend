@@ -1,11 +1,9 @@
 import mlconfig
 import torch
-from . import ResNet, ToyModel, ISBBA_resnet, dynamic_models, ResNetWithAT
+from . import ToyModel, ISBBA_resnet, dynamic_models, ResNetWithAT
 from torch.nn import CrossEntropyLoss
 
 # Register mlconfig
-# Models
-mlconfig.register(ResNet.ResNet18)  # Only register ResNet18 since it's explicitly used
 mlconfig.register(ToyModel.ToyModel)
 mlconfig.register(ISBBA_resnet.resnet18_200)
 mlconfig.register(ResNetWithAT.ResnetWithAT)
