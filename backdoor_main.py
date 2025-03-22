@@ -5,24 +5,20 @@ import logging
 import numpy as np
 import torch
 import torch.nn as nn
-import pandas as pd
-from collections import OrderedDict
-import models
-from models.model_for_cifar.model_select import select_model
+from torchvision import models
 from datasets.poison_tool_cifar import get_backdoor_loader, get_test_loader
 
-if torch.cuda.is_available():
-    torch.backends.cudnn.enabled = True
-    torch.backends.cudnn.benchmark = True
-    device = torch.device('cuda')
-else:
-    device = torch.device('cpu')
+# Set device (GPU if available)
+device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 
+# Fix random seeds for reproducibility
 seed = 98
-torch.backends.cudnn.deterministic = True
-torch.backends.cudnn.benchmark = False
 torch.manual_seed(seed)
 np.random.seed(seed)
+
+if torch.cuda.is_available():
+    torch.backends.cudnn.deterministic = True
+    torch.backends.cudnn.benchmark = False
 
 
 def train_step(args, model, criterion, optimizer, data_loader):
@@ -66,11 +62,38 @@ def test(model, criterion, data_loader):
 
 def save_checkpoint(state, epoch, is_best, args):
     if is_best:
-        filepath = os.path.join(args.save_root, args.model_name + '_' + args.trigger_type + '_' + args.dataset + '_' + f'target_label{args.target_label}' + '_' + f'poison_rate{args.poison_rate}' + '_' + f'epoch{epoch}.tar')
+        filepath = os.path.join(args.save_root, f"ResNet18_{args.trigger_type}_{args.dataset}_target{args.target_label}_poison{args.poison_rate}_epoch{epoch}.tar")
         torch.save(state, filepath)
+
+
+def select_model(args, dataset="CIFAR10", pretrained=False):
+    """
+    Selects and returns a ResNet18 model.
+    
+    Args:
+        args: Arguments object containing model-related parameters.
+        dataset (str): Name of the dataset (e.g., CIFAR10).
+        pretrained (bool): Whether to use a pretrained model (if applicable).
+    
+    Returns:
+        model: A PyTorch ResNet18 model instance.
+    """
+    num_classes = args.num_classes  # Number of output classes
+
+    # Use ResNet18 architecture
+    model = models.resnet18(pretrained=pretrained)
+    # Modify the final fully connected layer to match the number of classes
+    model.fc = nn.Linear(model.fc.in_features, num_classes)
+
+    # Move the model to the appropriate device (GPU or CPU)
+    model = model.to(device)
+
+    return model
+
 
 def main(args):
     logger = logging.getLogger(__name__)
+    os.makedirs(args.log_root, exist_ok=True)
     logging.basicConfig(
         format='[%(asctime)s] - %(message)s',
         datefmt='%Y/%m/%d %H:%M:%S',
@@ -85,25 +108,21 @@ def main(args):
     _, backdoor_data_loader = get_backdoor_loader(args)
     clean_test_loader, bad_test_loader = get_test_loader(args)
 
-    logger.info('----------- Backdoor Model Initialization --------------')
-    net = select_model(args, dataset=args.dataset,
-                            model_name=args.model_name,
-                            pretrained=False,
-                            pretrained_models_path=None
-                            )
+    logger.info('----------- ResNet18 Model Initialization --------------')
+    net = select_model(args, dataset=args.dataset, pretrained=False)
     print(net)
 
     criterion = torch.nn.CrossEntropyLoss().to(device)
     optimizer = torch.optim.SGD(net.parameters(), lr=args.lr, momentum=0.9, weight_decay=5e-4)
     scheduler = torch.optim.lr_scheduler.MultiStepLR(optimizer, milestones=args.schedule, gamma=0.1)
 
-    logger.info('----------- Backdoor Model Training--------------')
+    logger.info('----------- ResNet18 Model Training--------------')
     logger.info('Epoch \t lr \t Time \t TrainLoss \t TrainACC \t PoisonLoss \t PoisonACC \t CleanLoss \t CleanACC')
     for epoch in range(0, args.epochs + 1):
         start = time.time()
         lr = optimizer.param_groups[0]['lr']
         train_loss, train_acc = train_step(args=args, model=net, criterion=criterion, optimizer=optimizer,
-                                      data_loader=backdoor_data_loader)
+                                           data_loader=backdoor_data_loader)
         cl_test_loss, cl_test_acc = test(model=net, criterion=criterion, data_loader=clean_test_loader)
         po_test_loss, po_test_acc = test(model=net, criterion=criterion, data_loader=bad_test_loader)
         scheduler.step()
@@ -113,9 +132,8 @@ def main(args):
             epoch, lr, end - start, train_loss, train_acc, po_test_loss, po_test_acc,
             cl_test_loss, cl_test_acc)
 
-
         if epoch % args.save_every == 0 and epoch != 0 and epoch >= 50:
-            # save checkpoint at interval epoch
+            # Save checkpoint at interval epoch
             is_best = True
             save_checkpoint({
                 'epoch': epoch,
@@ -124,75 +142,38 @@ def main(args):
                 'bad_acc': po_test_acc,
                 'optimizer': optimizer.state_dict(),
             }, epoch, is_best, args)
-            
             logger.info('[INFO] Save model weight epoch {}'.format(epoch))
+
 
 def get_arguments():
     parser = argparse.ArgumentParser()
 
-   # various path
-    parser.add_argument('--cuda', type=int, default=1, help='cuda available')
+    # Various path
     parser.add_argument('--save_every', type=int, default=5, help='save checkpoints every few epochs')
-    parser.add_argument('--log_root', type=str, default='logs/', help='logs are saved here')
-    parser.add_argument('--log_name', type=str, default=None, help='logs name')
-    parser.add_argument('--save', type=int, default=1, help='whether save the weight')
-    parser.add_argument('--save_root', type=str, default='weights/', help='where to save the weight')
-    parser.add_argument('--model_name', type=str, default='ResNet18',
-                        choices=['ResNet18', 'vit_small_patch16_224'])
+    parser.add_argument('--log_root', type=str, default='/kaggle/working/logs/', help='logs are saved here')
+    parser.add_argument('--save_root', type=str, default='/kaggle/working/weights/', help='where to save the weight')
     parser.add_argument('--schedule', type=int, nargs='+', default=[40, 80],
                         help='Decrease learning rate at these epochs.')
     parser.add_argument('--dataset', type=str, default='CIFAR10', help='name of image dataset')
     parser.add_argument('--batch_size', type=int, default=128, help='The size of batch')
-    parser.add_argument('--momentum', type=float, default=0.9, help='momentum')
-    parser.add_argument('--weight_decay', type=float, default=5e-4, help='weight decay')
+    parser.add_argument('--lr', type=float, default=0.1, help='learning rate')
+    parser.add_argument('--epochs', type=int, default=60, help='number of epochs for training')
     parser.add_argument('--num_classes', type=int, default=10, help='number of classes')
-    parser.add_argument('--lr', type=int, default=0.1, help='the number of epochs for unlearning')
-    parser.add_argument('--epochs', type=int, default=60, help='the number of epochs for training')
 
-    # VITs CIFAR10
-    parser.add_argument('--img_size', type=int, default=32)
-    parser.add_argument('--patch', type=int, default=4)
-    parser.add_argument('--crop_size', type=int, default=32)
-
-
-    # backdoor attacks
+    # Backdoor attacks
     parser.add_argument('--target_label', type=int, default=0, help='class of target label')
     parser.add_argument('--trigger_type', type=str, default='gridTrigger', help='type of backdoor trigger')
-    parser.add_argument('--target_type', type=str, default='all2one', help='type of backdoor label')
-    parser.add_argument('--trig_w', type=int, default=3, help='width of trigger pattern')
-    parser.add_argument('--trig_h', type=int, default=3, help='height of trigger pattern')
     parser.add_argument('--poison_rate', type=float, default=0.1, help='ratio of backdoor poisoned data')
 
     return parser
 
+
 if __name__ == '__main__':
-    print(torch.cuda.device_count())
-    print(torch.cuda.current_device())
     args = get_arguments().parse_args()
 
+    # Ensure directories exist
+    os.makedirs(args.log_root, exist_ok=True)
+    os.makedirs(args.save_root, exist_ok=True)
 
-    if args.dataset == 'CIFAR10':
-        model_names = ['ResNet18']
-
-        # trigger_pools_cifar = ['onePixelTrigger', 'gridTrigger', 'wanetTrigger', 'trojanTrigger', 'blendTrigger',
-        #                      'signalTrigger', 'CLTrigger', 'smoothTrigger', 'dynamicTrigger', 'nashTrigger']
-
-        trigger_pools_cifar = ['onePixelTrigger']       
-        poison_rates = [0.0]
-        # args.epochs = 1
-
-        for model_name in model_names:
-            args.model_name = model_name
-            # args.trigger_types = trigger_pools_cifar
-            # print(args.model_name)
-            if args.model_name == 'vit_small_patch16_224' or args.model_name == 'vit_base_patch16_224':
-                args.lr = 0.001
-                args.epochs = 11
-                args.img_size = 224
-                args.schedule = [10, 20]
-            for trigger_type in trigger_pools_cifar:
-                args.trigger_type = trigger_type
-                # print('attack_type:', args.attack_type) 
-                for poison_rate in poison_rates:
-                    args.poison_rate = poison_rate
-                    main(args)
+    # Run the main function
+    main(args)
