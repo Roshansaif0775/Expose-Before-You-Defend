@@ -5,8 +5,9 @@ import logging
 import numpy as np
 import torch
 import torch.nn as nn
-from torchvision import models
+from collections import OrderedDict
 from datasets.poison_tool_cifar import get_backdoor_loader, get_test_loader
+from torchvision import models
 
 # Set device (GPU if available)
 device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
